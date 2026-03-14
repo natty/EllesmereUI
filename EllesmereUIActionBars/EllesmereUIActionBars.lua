@@ -219,6 +219,7 @@ local defaults = {
         procGlowScale = 1.0,
         procGlowEnabled = false,
         hideCastingAnimations = true,
+        nativeKeybinds = false,
         barPositions = {},
         bars = {},
     },
@@ -814,25 +815,29 @@ local function HideBlizzardBars()
         RegisterAttributeDriver(OverrideActionBar, "state-visibility",
             "[vehicleui][overridebar] show; hide")
     end
-    -- Wipe Blizzard's actionButtons tables so they don't interfere
-    for _, name in ipairs({"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7"}) do
-        local bar = _G[name]
-        if bar and bar.actionButtons then
-            wipe(bar.actionButtons)
+    -- In native keybinds mode, keep Blizzard's binding handlers and
+    -- actionButtons tables intact so standard bindings work for all bars.
+    if not (EAB.db and EAB.db.profile.nativeKeybinds) then
+        -- Wipe Blizzard's actionButtons tables so they don't interfere
+        for _, name in ipairs({"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7"}) do
+            local bar = _G[name]
+            if bar and bar.actionButtons then
+                wipe(bar.actionButtons)
+            end
         end
-    end
-    -- Replace Blizzard's multi-bar button handlers with no-ops.
-    -- After wiping actionButtons, the original functions would error
-    -- if a Blizzard binding fires before our override bindings are set.
-    if MultiActionButtonDown then _G.MultiActionButtonDown = function() end end
-    if MultiActionButtonUp then _G.MultiActionButtonUp = function() end end
-    -- Also wipe button container references on MainActionBar
-    local mainAB = _G["MainActionBar"]
-    if mainAB then
-        for i = 1, 3 do
-            local container = _G["MainActionBarButtonContainer" .. i]
-            if container and container.actionButtons then
-                wipe(container.actionButtons)
+        -- Replace Blizzard's multi-bar button handlers with no-ops.
+        -- After wiping actionButtons, the original functions would error
+        -- if a Blizzard binding fires before our override bindings are set.
+        if MultiActionButtonDown then _G.MultiActionButtonDown = function() end end
+        if MultiActionButtonUp then _G.MultiActionButtonUp = function() end end
+        -- Also wipe button container references on MainActionBar
+        local mainAB = _G["MainActionBar"]
+        if mainAB then
+            for i = 1, 3 do
+                local container = _G["MainActionBarButtonContainer" .. i]
+                if container and container.actionButtons then
+                    wipe(container.actionButtons)
+                end
             end
         end
     end
@@ -4664,6 +4669,7 @@ end
 local function UpdateKeybinds()
     if _vehicleBindsCleared or _housingBindsCleared then return end
     if InCombatLockdown() then return end
+    if EAB.db and EAB.db.profile.nativeKeybinds then return end
 
     local keyDownEnabled = IsKeyDownEnabled()
     local clickType = keyDownEnabled and "HOTKEY" or "LeftButton"
@@ -5314,13 +5320,16 @@ function EAB:FinishSetup()
             if OverrideActionBar then
                 RegisterAttributeDriver(OverrideActionBar, "state-visibility", "[vehicleui][overridebar] show; hide")
             end
-            -- Wipe Blizzard's actionButtons tables during combat reload
-            for _, name in ipairs({"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7"}) do
-                local bar = _G[name]
-                if bar and bar.actionButtons then wipe(bar.actionButtons) end
+            -- In native keybinds mode, keep Blizzard's binding handlers intact
+            if not (EAB.db and EAB.db.profile.nativeKeybinds) then
+                -- Wipe Blizzard's actionButtons tables during combat reload
+                for _, name in ipairs({"MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft", "MultiBar5", "MultiBar6", "MultiBar7"}) do
+                    local bar = _G[name]
+                    if bar and bar.actionButtons then wipe(bar.actionButtons) end
+                end
+                if MultiActionButtonDown then _G.MultiActionButtonDown = function() end end
+                if MultiActionButtonUp then _G.MultiActionButtonUp = function() end end
             end
-            if MultiActionButtonDown then _G.MultiActionButtonDown = function() end end
-            if MultiActionButtonUp then _G.MultiActionButtonUp = function() end end
             C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_1", "1")
             C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_2", "1")
             C_CVar.SetCVar("SHOW_MULTI_ACTIONBAR_3", "1")

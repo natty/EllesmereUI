@@ -804,6 +804,27 @@ initFrame:SetScript("OnEvent", function(self)
                 SetCVarSafe("SpellQueueWindow", v)
               end });  y = y - h
 
+        do
+            local EAB_addon = EllesmereUI.Lite and EllesmereUI.Lite.GetAddon("EllesmereUIActionBars", true)
+            if EAB_addon and EAB_addon.db then
+                _, h = W:DualRow(parent, y,
+                    { type="toggle", text="Blizzard Keybinds",
+                      tooltip="Use Blizzard's default action bars but control the look and layout",
+                      getValue=function() return EAB_addon.db.profile.nativeKeybinds end,
+                      setValue=function(v)
+                          EAB_addon.db.profile.nativeKeybinds = v
+                          EllesmereUI:ShowConfirmPopup({
+                              title       = "Reload Required",
+                              message     = "Native Keybinds changed. A UI reload is needed to apply.",
+                              confirmText = "Reload Now",
+                              cancelText  = "Later",
+                              onConfirm   = function() ReloadUI() end,
+                          })
+                      end },
+                    { type="label", text="" });  y = y - h
+            end
+        end
+
         _, h = W:Spacer(parent, y, 20);  y = y - h
 
         -------------------------------------------------------------------
