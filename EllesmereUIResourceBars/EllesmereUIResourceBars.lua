@@ -65,6 +65,21 @@ local PT = {
     ESSENCE     = 19, -- Evoker
 }
 
+-------------------------------------------------------------------------------
+--  Channel tick data — spellID → { ticks, [modSpell, modTicks, highlight] }
+--  modSpell/modTicks: if the player knows modSpell (talent), use modTicks instead.
+--  highlight: "penultimate" = gold highlight on second-to-last tick (chain point).
+--             nil = all ticks drawn uniformly (no special highlight).
+--  Spell IDs verified against Wowhead/Warcraft Wiki as of 12.0.1 — if a spell
+--  is reworked or a new channeled spell is added, add a row here.
+-------------------------------------------------------------------------------
+local CHANNEL_TICK_DATA = {
+    [356995]  = { ticks = 4, modSpell = 1219723, modTicks = 5 },                   -- Disintegrate (Evoker) / Azure Celerity
+    [15407]   = { ticks = 6, gcdBoundary = 2 },                    -- Mind Flay (Shadow Priest)
+    [257044]  = { ticks = 7 },                                     -- Rapid Fire (MM Hunter) — no clean GCD boundary
+    [1261193] = { ticks = 4 },                                     -- Boomstick (Survival Hunter) — no clean GCD boundary
+    [5143]    = { ticks = 5, gcdBoundary = 3 },                    -- Arcane Missiles (Arcane Mage)
+}
 
 -------------------------------------------------------------------------------
 --  Class/Spec resource mapping
@@ -406,6 +421,9 @@ local DEFAULTS = {
             spellTextY    = 0,
             scale         = 1.0,
             unlockPos     = nil,
+            showChannelTicks = true,
+            tickHighlight    = "last",
+            tickHighlightR   = 1.0, tickHighlightG = 0.82, tickHighlightB = 0.0, tickHighlightA = 0.95,
         },
         general = {
             anchorX     = 0,
@@ -439,6 +457,7 @@ local RefreshAnchoredBarsForUnlockTarget
 local UpdateCastBar
 local BuildCastBar
 local OnCastStart, OnChannelStart, OnCastStop, OnEmpowerStart, OnEmpowerUpdate
+local ShowChannelTicks, HideChannelTicks
 
 -------------------------------------------------------------------------------
 --  Helpers
@@ -2671,6 +2690,8 @@ BuildCastBar = function()
         castBarFrame._spellName = ""
         castBarFrame._pips = {}
         castBarFrame._numStages = 0
+        castBarFrame._ticks = {}
+        castBarFrame._numTicks = 0
     end
 
     -- Apply settings
@@ -2873,12 +2894,107 @@ end
         end
     end
 
+    -- Hide channel ticks when not channeling
+    HideChannelTicks()
+
     -- Hide when not casting
     if not castBarFrame._casting and not castBarFrame._channeling and not castBarFrame._empowering then
         castBarFrame:Hide()
     else
         castBarFrame:Show()
     end
+end
+
+
+-------------------------------------------------------------------------------
+--  Channel tick marks
+--  Shows vertical tick marks on the cast bar during channeled spells whose
+--  spell ID appears in CHANNEL_TICK_DATA.  The penultimate tick (the last
+--  safe point to chain/clip) is drawn slightly wider in gold.
+--  Layout mirrors the empower pip code above for visual consistency.
+-------------------------------------------------------------------------------
+ShowChannelTicks = function(spellID)
+    if not castBarFrame then return end
+    local cb = ERB.db.profile.castBar
+    if not cb.showChannelTicks then return end
+
+    local data = CHANNEL_TICK_DATA[spellID]
+    if not data then return end
+
+    local numTicks = data.ticks
+    if data.modSpell and IsPlayerSpell(data.modSpell) then
+        numTicks = data.modTicks
+    end
+
+    local bar = castBarFrame._bar
+    local barWidth = bar:GetWidth()
+    local barHeight = bar:GetHeight()
+    if barWidth <= 0 or barHeight <= 0 then return end
+
+    -- Pixel-snap helpers (same approach as empower pips)
+    local effectiveScale = bar:GetEffectiveScale()
+    local pixelSize = 1 / effectiveScale
+    local tickWidth = max(pixelSize, floor(2 * effectiveScale + 0.5) / effectiveScale)
+    local highlightWidth = max(pixelSize, floor(3 * effectiveScale + 0.5) / effectiveScale)
+
+    -- Highlight mode and color from settings (with safe fallbacks)
+    local highlightMode = cb.tickHighlight or "last"
+    local hR = cb.tickHighlightR or 1.0
+    local hG = cb.tickHighlightG or 0.82
+    local hB = cb.tickHighlightB or 0.0
+    local hA = cb.tickHighlightA or 0.95
+
+    -- Place a mark at each tick boundary.
+    -- The channel bar drains from 1→0 (fill shrinks from right to left).
+    -- Tick i fires at (i/numTicks) of the duration elapsed, at which point
+    -- the bar progress = (numTicks - i) / numTicks.  That fraction of the
+    -- bar width from the LEFT is where the mark sits.
+    -- We skip the last tick (i == numTicks) since it's the bar's zero edge.
+    for i = 1, numTicks - 1 do
+        local tick = castBarFrame._ticks[i]
+        if not tick then
+            tick = bar:CreateTexture(nil, "OVERLAY", nil, 3)
+            castBarFrame._ticks[i] = tick
+        end
+
+        local isHighlighted = false
+        if highlightMode == "last" then
+            isHighlighted = (i == numTicks - 1)
+        elseif highlightMode == "gcd" and data.gcdBoundary then
+            isHighlighted = ((numTicks - i) % data.gcdBoundary == 0)
+        end
+
+        local rawOffset = barWidth * (numTicks - i) / numTicks
+        local snappedOffset = floor(rawOffset * effectiveScale + 0.5) / effectiveScale
+        local snappedHeight = floor(barHeight * effectiveScale + 0.5) / effectiveScale
+
+        if isHighlighted then
+            tick:SetColorTexture(hR, hG, hB, hA)
+            tick:SetSize(highlightWidth, snappedHeight)
+        else
+            tick:SetColorTexture(1, 1, 1, 0.7)
+            tick:SetSize(tickWidth, snappedHeight)
+        end
+
+        tick:ClearAllPoints()
+        tick:SetPoint("CENTER", bar, "LEFT", snappedOffset, 0)
+        tick:Show()
+    end
+
+    -- Hide extras from a previous channel that had more ticks
+    for i = numTicks, #castBarFrame._ticks do
+        castBarFrame._ticks[i]:Hide()
+    end
+
+    castBarFrame._numTicks = numTicks
+end
+
+HideChannelTicks = function()
+    if not castBarFrame or not castBarFrame._ticks then return end
+    for i = 1, #castBarFrame._ticks do
+        castBarFrame._ticks[i]:Hide()
+    end
+    castBarFrame._numTicks = 0
 end
 
 
@@ -2957,6 +3073,7 @@ OnCastStart = function()
         for i = 1, #castBarFrame._pips do castBarFrame._pips[i]:Hide() end
     end
     castBarFrame._numStages = 0
+    HideChannelTicks()
 
     -- Icon
     do
@@ -3009,6 +3126,9 @@ OnChannelStart = function()
         end
     end
 
+    -- Channel tick marks
+    ShowChannelTicks(spellID)
+
     castBarFrame:Show()
 end
 
@@ -3044,6 +3164,7 @@ local function OnChannelStop(eventCastID)
     if not eventCastID or not castBarFrame._castID or eventCastID ~= castBarFrame._castID then return end
     castBarFrame._channeling = false
     castBarFrame._castID = nil
+    HideChannelTicks()
     castBarFrame:Hide()
 end
 
@@ -3076,6 +3197,7 @@ OnCastStop = function()
         end
     end
     castBarFrame._numStages = 0
+    HideChannelTicks()
     castBarFrame:Hide()
 end
 
@@ -3101,6 +3223,7 @@ OnEmpowerStart = function()
     castBarFrame._spellName = name
     castBarFrame._nameText:SetText(name)
     castBarFrame._bar:SetValue(0)
+    HideChannelTicks()
 
     -- Icon
     do

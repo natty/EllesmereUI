@@ -3299,6 +3299,80 @@ initFrame:SetScript("OnEvent", function(self)
             UpdateCogDisTimer()
         end
 
+        -- Row 6: Show Channel Ticks | Highlight Ticks (dropdown + inline color swatch)
+        local ticksOff = function()
+            local p = DB()
+            return castOff() or not (p and p.castBar.showChannelTicks)
+        end
+        local tickHighlightRow, h2 = W:DualRow(parent, y,
+            { type = "toggle", text = "Show Channel Ticks",
+              disabled = castOff,
+              disabledTooltip = "Enable Player Cast Bar",
+              getValue = function() local p = DB(); return p and p.castBar.showChannelTicks end,
+              setValue = function(v)
+                  local p = DB(); if not p then return end
+                  p.castBar.showChannelTicks = v; RefreshCast()
+                  EllesmereUI:RefreshPage()
+              end },
+            { type = "dropdown", text = "Highlight Ticks",
+              values = { none = "None", last = "Last Tick", gcd = "GCD Boundary" },
+              order = { "none", "last", "gcd" },
+              disabled = ticksOff,
+              disabledTooltip = "This option requires \"Show Channel Ticks\" to be enabled",
+              getValue = function() local p = DB(); return p and p.castBar.tickHighlight or "last" end,
+              setValue = function(v)
+                  local p = DB(); if not p then return end
+                  p.castBar.tickHighlight = v; RefreshCast()
+              end }
+        );  y = y - h2
+
+        -- Inline color swatch on Highlight Ticks (right region)
+        do
+            local rgn = tickHighlightRow._rightRegion
+            local ctrl = rgn and rgn._control
+            local swatch, updateSwatch = EllesmereUI.BuildColorSwatch(
+                rgn, tickHighlightRow:GetFrameLevel() + 3,
+                function()
+                    local p = DB(); if not p then return 1.0, 0.82, 0.0, 0.95 end
+                    return p.castBar.tickHighlightR or 1.0,
+                           p.castBar.tickHighlightG or 0.82,
+                           p.castBar.tickHighlightB or 0.0,
+                           p.castBar.tickHighlightA or 0.95
+                end,
+                function(r, g, b, a)
+                    local p = DB(); if not p then return end
+                    p.castBar.tickHighlightR = r
+                    p.castBar.tickHighlightG = g
+                    p.castBar.tickHighlightB = b
+                    p.castBar.tickHighlightA = a
+                    RefreshCast()
+                end,
+                true, 20)
+            PP.Point(swatch, "RIGHT", ctrl, "LEFT", -8, 0)
+
+            local swatchBlock = CreateFrame("Frame", nil, swatch)
+            swatchBlock:SetAllPoints()
+            swatchBlock:SetFrameLevel(swatch:GetFrameLevel() + 10)
+            swatchBlock:EnableMouse(true)
+            swatchBlock:SetScript("OnEnter", function()
+                EllesmereUI.ShowWidgetTooltip(swatch, EllesmereUI.DisabledTooltip("This option requires \"Show Channel Ticks\" to be enabled"))
+            end)
+            swatchBlock:SetScript("OnLeave", function() EllesmereUI.HideWidgetTooltip() end)
+
+            local function UpdateTickSwatchState()
+                updateSwatch()
+                if ticksOff() then
+                    swatch:SetAlpha(0.3)
+                    swatchBlock:Show()
+                else
+                    swatch:SetAlpha(1)
+                    swatchBlock:Hide()
+                end
+            end
+            EllesmereUI.RegisterWidgetRefresh(UpdateTickSwatchState)
+            UpdateTickSwatchState()
+        end
+
         -- Wire up click mappings for cast bar preview hit overlays
         _clickMappings.castBar       = { section = castSection, target = classSizeRow }
         _clickMappings.castIcon      = { section = castSection, target = castEnableRow, slotSide = "right" }
