@@ -75,10 +75,10 @@ local PT = {
 -------------------------------------------------------------------------------
 local CHANNEL_TICK_DATA = {
     [356995]  = { ticks = 4, modSpell = 1219723, modTicks = 5 },                   -- Disintegrate (Evoker) / Azure Celerity
-    [15407]   = { ticks = 6, gcdBoundary = 2 },                    -- Mind Flay (Shadow Priest)
+    [15407]   = { ticks = 6 },                                     -- Mind Flay (Shadow Priest)
     [257044]  = { ticks = 7 },                                     -- Rapid Fire (MM Hunter) — no clean GCD boundary
     [1261193] = { ticks = 4 },                                     -- Boomstick (Survival Hunter) — no clean GCD boundary
-    [5143]    = { ticks = 5, gcdBoundary = 3 },                    -- Arcane Missiles (Arcane Mage)
+    [5143]    = { ticks = 5 },                                     -- Arcane Missiles (Arcane Mage)
 }
 
 -------------------------------------------------------------------------------
@@ -2960,8 +2960,6 @@ ShowChannelTicks = function(spellID)
         local isHighlighted = false
         if highlightMode == "last" then
             isHighlighted = (i == numTicks - 1)
-        elseif highlightMode == "gcd" and data.gcdBoundary then
-            isHighlighted = ((numTicks - i) % data.gcdBoundary == 0)
         end
 
         local rawOffset = barWidth * (numTicks - i) / numTicks
@@ -2987,6 +2985,41 @@ ShowChannelTicks = function(spellID)
     end
 
     castBarFrame._numTicks = numTicks
+
+    -- GCD boundary mark — a separate mark at the exact GCD time position,
+    -- computed from real haste so it's accurate even above the GCD floor.
+    if highlightMode == "gcd" then
+        local gcdMark = castBarFrame._gcdMark
+        if not gcdMark then
+            gcdMark = bar:CreateTexture(nil, "OVERLAY", nil, 4)
+            castBarFrame._gcdMark = gcdMark
+        end
+
+        local channelDuration = castBarFrame._endTime - castBarFrame._startTime
+        if channelDuration > 0 then
+            local haste = UnitSpellHaste("player") / 100
+            local currentGCD = max(0.75, 1.5 / (1 + haste))
+            local gcdFraction = currentGCD / channelDuration
+
+            if gcdFraction > 0 and gcdFraction < 1 then
+                local gcdOffset = barWidth * (1 - gcdFraction)
+                local snappedGcdOffset = floor(gcdOffset * effectiveScale + 0.5) / effectiveScale
+                local snappedHeight = floor(barHeight * effectiveScale + 0.5) / effectiveScale
+
+                gcdMark:SetColorTexture(hR, hG, hB, hA)
+                gcdMark:SetSize(highlightWidth, snappedHeight)
+                gcdMark:ClearAllPoints()
+                gcdMark:SetPoint("CENTER", bar, "LEFT", snappedGcdOffset, 0)
+                gcdMark:Show()
+            else
+                gcdMark:Hide()
+            end
+        else
+            gcdMark:Hide()
+        end
+    elseif castBarFrame._gcdMark then
+        castBarFrame._gcdMark:Hide()
+    end
 end
 
 HideChannelTicks = function()
@@ -2995,6 +3028,9 @@ HideChannelTicks = function()
         castBarFrame._ticks[i]:Hide()
     end
     castBarFrame._numTicks = 0
+    if castBarFrame._gcdMark then
+        castBarFrame._gcdMark:Hide()
+    end
 end
 
 
