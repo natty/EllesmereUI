@@ -750,13 +750,8 @@ local function HideBlizzardBars()
         local bar = _G[name]
         if bar then
             bar:UnregisterAllEvents()
-            if name ~= "StanceBar" and name ~= "PetActionBar" then
-                if bar.numButtonsShowable ~= nil then
-                    bar.numButtonsShowable = 12
-                end
-                bar:SetParent(hiddenParent)
-                bar:Hide()
-            end
+            bar:SetParent(hiddenParent)
+            bar:Hide()
         end
     end
     -- Also hide the MainActionBar container and related frames
@@ -5911,13 +5906,8 @@ function EAB:FinishSetup()
             local bar = _G[name]
             if bar then
                 bar:UnregisterAllEvents()
-                if name ~= "StanceBar" and name ~= "PetActionBar" then
-                    if bar.numButtonsShowable ~= nil then
-                        bar.numButtonsShowable = 12
-                    end
-                    bar:SetParent(hiddenParent)
-                    bar:Hide()
-                end
+                bar:SetParent(hiddenParent)
+                bar:Hide()
             end
         end
         if MainActionBarController then
@@ -5928,13 +5918,11 @@ function EAB:FinishSetup()
     -- Hook Show on the Blizzard bars so they can never re-appear regardless
     -- of what fires them (talent changes, spec swaps, zone transitions, etc.)
     for _, name in ipairs(BLIZZARD_BARS_TO_HIDE) do
-        if name ~= "StanceBar" and name ~= "PetActionBar" then
-            local bar = _G[name]
-            if bar then
-                bar:HookScript("OnShow", function(self)
-                    self:Hide()
-                end)
-            end
+        local bar = _G[name]
+        if bar then
+            bar:HookScript("OnShow", function(self)
+                self:Hide()
+            end)
         end
     end
 
