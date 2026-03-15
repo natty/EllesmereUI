@@ -750,8 +750,13 @@ local function HideBlizzardBars()
         local bar = _G[name]
         if bar then
             bar:UnregisterAllEvents()
-            bar:SetParent(hiddenParent)
-            bar:Hide()
+            if name ~= "StanceBar" and name ~= "PetActionBar" then
+                if bar.numButtonsShowable ~= nil then
+                    bar.numButtonsShowable = 12
+                end
+                bar:SetParent(hiddenParent)
+                bar:Hide()
+            end
         end
     end
     -- Also hide the MainActionBar container and related frames
@@ -801,6 +806,7 @@ end
 -------------------------------------------------------------------------------
 local allButtons = {}   -- [actionSlot] = button
 local barButtons = {}   -- [barKey] = { btn1, btn2, ... }
+local buttonToBar = {}  -- [btn] = { barKey, index }
 local barFrames  = {}   -- [barKey] = secure header frame
 local dataBarFrames = {} -- [barKey] = data bar frame (XP/Rep) populated later in SetupDataBars
 local blizzMovableHolders = {} -- [barKey] = holder frame for Blizzard movable frames (ExtraAction, Encounter)
@@ -1874,6 +1880,7 @@ local function SetupBar(info, skipProtected)
                     EABFlyout:RegisterButton(btn)
                 end
                 buttons[i] = btn
+                buttonToBar[btn] = { barKey = key, index = i }
             end
         end
     end
@@ -2027,9 +2034,10 @@ local function CaptureBlizzardDefaults()
             if data.alwaysShowButtons == false and info.blizzBtnPrefix then
                 local numToCheck = data.numIcons or info.count or 12
                 local hasAny = false
+                local slotOffset = BAR_SLOT_OFFSETS[key] or 0
                 for i = 1, numToCheck do
-                    local btn = _G[info.blizzBtnPrefix .. i]
-                    if btn and btn.action and HasAction(btn.action) then
+                    local slot = slotOffset + i
+                    if HasAction(slot) then
                         hasAny = true
                         break
                     end
@@ -3233,13 +3241,22 @@ local _rangeSlots = {}          -- [actionSlot] = true  (slots with range checki
 local _rangeOutOfRange = {}     -- [actionSlot] = true  (currently out of range)
 local _rangeEventFrame          -- lazy-created event frame
 local _rangeSlotPending = false -- debounce for per-slot range re-enable
+local _mainBarOffset = 0        -- cached actionOffset for MainBar (updated on page change)
 
--- Resolve the action slot for a button (handles paging for MainBar)
+-- Resolve the action slot for a button (handles paging for MainBar).
+-- Uses buttonToBar lookup instead of btn.action to avoid reading the
+-- protected action attribute, which is a secret value in Midnight.
+-- Uses cached _mainBarOffset instead of frame:GetAttribute("actionOffset")
+-- to avoid reading a protected attribute during combat.
 local function GetButtonActionSlot(btn)
-    if not btn then return nil end
-    local action = btn.action
-    if action and type(action) == "number" and action > 0 then return action end
-    return nil
+    local info = buttonToBar[btn]
+    if not info then return nil end
+    local offset = BAR_SLOT_OFFSETS[info.barKey]
+    if not offset then return nil end
+    if info.barKey == "MainBar" then
+        offset = _mainBarOffset
+    end
+    return offset + info.index
 end
 
 -- Apply or remove the range tint on a single button
@@ -5894,8 +5911,13 @@ function EAB:FinishSetup()
             local bar = _G[name]
             if bar then
                 bar:UnregisterAllEvents()
-                bar:SetParent(hiddenParent)
-                bar:Hide()
+                if name ~= "StanceBar" and name ~= "PetActionBar" then
+                    if bar.numButtonsShowable ~= nil then
+                        bar.numButtonsShowable = 12
+                    end
+                    bar:SetParent(hiddenParent)
+                    bar:Hide()
+                end
             end
         end
         if MainActionBarController then
@@ -5906,11 +5928,13 @@ function EAB:FinishSetup()
     -- Hook Show on the Blizzard bars so they can never re-appear regardless
     -- of what fires them (talent changes, spec swaps, zone transitions, etc.)
     for _, name in ipairs(BLIZZARD_BARS_TO_HIDE) do
-        local bar = _G[name]
-        if bar then
-            bar:HookScript("OnShow", function(self)
-                self:Hide()
-            end)
+        if name ~= "StanceBar" and name ~= "PetActionBar" then
+            local bar = _G[name]
+            if bar then
+                bar:HookScript("OnShow", function(self)
+                    self:Hide()
+                end)
+            end
         end
     end
 
